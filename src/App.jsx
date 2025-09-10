@@ -33,8 +33,40 @@ function App() {
     }
   };
 
+  // Function to determine funcionamiento status
+  const determineFuncionamiento = (row, headers) => {
+    // Find column G and I by index (0-based, so G=6, I=8)
+    const columnGKey = headers[6]; // Column G (7th column, 0-indexed)
+    const columnIKey = headers[8]; // Column I (9th column, 0-indexed)
+    
+    const columnGValue = row[columnGKey];
+    const columnIValue = row[columnIKey];
+    
+    // Check if column G is "online"
+    const isOnline = columnGValue && columnGValue.toString().toLowerCase() === 'online';
+    
+    // Check if column I is TRUE, "True", or 1
+    const isTrueValue = columnIValue === true || 
+                       columnIValue === 'True' || 
+                       columnIValue === 'true' || 
+                       columnIValue === 1 || 
+                       columnIValue === '1';
+    
+    // Apply the formula: IF(AND(G="online", NOT(OR(I=TRUE, I="True", I=1))), "Funciona", "No funciona")
+    if (isOnline && !isTrueValue) {
+      return 'Funciona';
+    } else {
+      return 'No funciona';
+    }
+  };
+
   // Process CSV data and convert ISO dates
   const processCSVData = (data) => {
+    if (!data || data.length === 0) return data;
+    
+    // Get headers from first row
+    const headers = Object.keys(data[0]);
+    
     return data.map(row => {
       const processedRow = { ...row };
       
@@ -52,6 +84,9 @@ function App() {
         );
         delete processedRow['Hora de la última vista (formato ISO 8601)'];
       }
+      
+      // Add funcionamiento column (column P)
+      processedRow['Funcionamiento'] = determineFuncionamiento(row, headers);
       
       return processedRow;
     });
@@ -230,6 +265,11 @@ function App() {
                             <Calendar size={16} style={{ display: 'inline', marginRight: '4px' }} />
                             {header.replace(' (formato ISO 8601)', '')}
                           </>
+                        ) : header === 'Funcionamiento' ? (
+                          <>
+                            <CheckCircle size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                            {header}
+                          </>
                         ) : (
                           header
                         )}
@@ -240,8 +280,13 @@ function App() {
                 <tbody>
                   {csvData.slice(0, 5).map((row, rowIndex) => (
                     <tr key={rowIndex}>
-                      {Object.values(row).map((cell, cellIndex) => (
-                        <td key={cellIndex}>{cell || 'N/A'}</td>
+                      {Object.entries(row).map(([key, cell], cellIndex) => (
+                        <td key={cellIndex} style={key === 'Funcionamiento' ? {
+                          color: cell === 'Funciona' ? '#10b981' : '#ef4444',
+                          fontWeight: 'bold'
+                        } : {}}>
+                          {cell || 'N/A'}
+                        </td>
                       ))}
                     </tr>
                   ))}
@@ -261,6 +306,7 @@ function App() {
         <h4>Características:</h4>
         <ul style={{ textAlign: 'left', color: '#666' }}>
           <li>✅ Conversión automática de fechas ISO 8601 a formato legible</li>
+          <li>✅ Columna automática de "Funcionamiento" basada en estado online</li>
           <li>✅ Soporte para arrastrar y soltar archivos</li>
           <li>✅ Vista previa de datos antes de la conversión</li>
           <li>✅ Columnas auto-ajustables en Excel</li>
