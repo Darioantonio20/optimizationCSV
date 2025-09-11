@@ -1,8 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, Download, FileSpreadsheet, Calendar, CheckCircle, List } from 'lucide-react';
+import { Upload, Download, FileSpreadsheet, Calendar, CheckCircle, List, Wifi, Map } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import CodeConverter from './CodeConverter.jsx';
+import WifiReport from './WifiReport.jsx';
+import GpsReport from './GpsReport.jsx';
 
 function App() {
   const [currentView, setCurrentView] = useState('csv'); // 'csv' or 'codes'
@@ -262,7 +264,7 @@ function App() {
           }}
         >
           <FileSpreadsheet size={20} />
-          Conversor CSV a Excel
+          Cámara csv - excel
         </button>
         <button
           onClick={() => setCurrentView('codes')}
@@ -284,11 +286,55 @@ function App() {
           <List size={20} />
           Conversor Códigos Geotab
         </button>
+        <button
+          onClick={() => setCurrentView('wifi')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            backgroundColor: currentView === 'wifi' ? '#667eea' : '#f8fafc',
+            color: currentView === 'wifi' ? 'white' : '#64748b',
+            border: '2px solid #667eea',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '16px',
+            fontWeight: '500',
+            transition: 'all 0.2s',
+          }}
+        >
+          <Wifi size={20} />
+          Reporte WIFI
+        </button>
+        <button
+          onClick={() => setCurrentView('gps')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            backgroundColor: currentView === 'gps' ? '#667eea' : '#f8fafc',
+            color: currentView === 'gps' ? 'white' : '#64748b',
+            border: '2px solid #667eea',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '16px',
+            fontWeight: '500',
+            transition: 'all 0.2s',
+          }}
+        >
+          <Map size={20} />
+          Reporte GPS
+        </button>
       </div>
 
       {/* Render current view */}
       {currentView === 'codes' ? (
         <CodeConverter />
+      ) : currentView === 'wifi' ? (
+        <WifiReport />
+      ) : currentView === 'gps' ? (
+        <GpsReport />
       ) : (
         <>
           <h1>Conversor CSV a Excel</h1>
