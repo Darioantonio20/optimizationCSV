@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, Download, FileSpreadsheet, Calendar, CheckCircle } from 'lucide-react';
+import { Upload, Download, FileSpreadsheet, Calendar, CheckCircle, List } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import CodeConverter from './CodeConverter.jsx';
 
 function App() {
+  const [currentView, setCurrentView] = useState('csv'); // 'csv' or 'codes'
   const [csvData, setCsvData] = useState(null);
   const [fileName, setFileName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -68,7 +70,18 @@ function App() {
     const headers = Object.keys(data[0]);
     
     return data.map(row => {
-      const processedRow = { ...row };
+      const processedRow = {};
+      const originalKeys = Object.keys(row);
+      
+      // Process each column in order
+      originalKeys.forEach((key, index) => {
+        if (index === 1) {
+          // Column B becomes EQUIPO
+          processedRow['EQUIPO'] = row[key];
+        } else {
+          processedRow[key] = row[key];
+        }
+      });
       
       // Convert ISO 8601 dates for specific columns
       if (processedRow['Última hora registrada (formato ISO 8601)']) {
@@ -85,8 +98,11 @@ function App() {
         delete processedRow['Hora de la última vista (formato ISO 8601)'];
       }
       
-      // Add funcionamiento column (column P)
+      // Add funcionamiento column
       processedRow['Funcionamiento'] = determineFuncionamiento(row, headers);
+      
+      // Add Status column for preview (will be added as formula in Excel)
+      processedRow['Status'] = 'Fórmula BUSCARV';
       
       return processedRow;
     });
@@ -156,15 +172,41 @@ function App() {
     try {
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(csvData);
+      
+      // Prepare data with proper headers (remove Status from data since it will be added as formula)
+      const processedData = csvData.map((row, index) => {
+        const newRow = { ...row };
+        
+        // Remove Status column from data (will be added as formula)
+        delete newRow['Status'];
+        
+        return newRow;
+      });
+      
+      const ws = XLSX.utils.json_to_sheet(processedData);
+      
+      // Add Status column with instruction text in P2
+      const headers = Object.keys(processedData[0]);
+      const statusColumnIndex = headers.length; // Next available column
+      
+      // Add Status header
+      const statusHeaderCell = XLSX.utils.encode_cell({ r: 0, c: statusColumnIndex });
+      ws[statusHeaderCell] = { t: 's', v: 'Status' };
+
+      // Put instruction text with the exact formula in P2 (row index 1)
+      const instructionCell = XLSX.utils.encode_cell({ r: 1, c: statusColumnIndex });
+      ws[instructionCell] = {
+        t: 's',
+        v: "Pon esta fórmula y arrástrala hacia abajo: =BUSCARV(B2;'https://experienciasxcaret.sharepoint.com/sites/PRUEBA182-Controllogstico/Documentos compartidos/Control logístico/Control/Monitoreo 2024/[Status de unidades zonas.xlsx]Flotilla Septiembre 2025'!$A:$M;13;FALSO)"
+      };
 
       // Auto-size columns
       const colWidths = [];
-      const headers = Object.keys(csvData[0]);
+      const allHeaders = [...headers, 'Status'];
       
-      headers.forEach((header, index) => {
+      allHeaders.forEach((header, index) => {
         let maxWidth = header.length;
-        csvData.forEach(row => {
+        processedData.forEach(row => {
           const cellValue = String(row[header] || '');
           maxWidth = Math.max(maxWidth, cellValue.length);
         });
@@ -172,6 +214,11 @@ function App() {
       });
       
       ws['!cols'] = colWidths;
+      
+      // Update range to include Status column
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      range.e.c = statusColumnIndex;
+      ws['!ref'] = XLSX.utils.encode_range(range);
 
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(wb, ws, 'Datos');
@@ -190,131 +237,210 @@ function App() {
 
   return (
     <div className="container">
-      <h1>Conversor CSV a Excel</h1>
-      <p className="subtitle">
-        Convierte archivos CSV a Excel con formato de fechas mejorado
-      </p>
-
-      <div
-        className={`upload-area ${isLoading ? 'disabled' : ''}`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onClick={() => !isLoading && document.getElementById('fileInput').click()}
-      >
-        <Upload size={48} style={{ color: '#667eea', marginBottom: '1rem' }} />
-        <h3>Arrastra tu archivo CSV aquí</h3>
-        <p>o haz clic para seleccionar un archivo</p>
-        <input
-          id="fileInput"
-          type="file"
-          accept=".csv"
-          onChange={(e) => handleFileUpload(e.target.files[0])}
-          className="file-input"
-          disabled={isLoading}
-        />
+      {/* Navigation Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        marginBottom: '2rem',
+        gap: '1rem'
+      }}>
+        <button
+          onClick={() => setCurrentView('csv')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            backgroundColor: currentView === 'csv' ? '#667eea' : '#f8fafc',
+            color: currentView === 'csv' ? 'white' : '#64748b',
+            border: '2px solid #667eea',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '16px',
+            fontWeight: '500',
+            transition: 'all 0.2s',
+          }}
+        >
+          <FileSpreadsheet size={20} />
+          Conversor CSV a Excel
+        </button>
+        <button
+          onClick={() => setCurrentView('codes')}
+          style={{
+            padding: '0.75rem 1.5rem',
+            backgroundColor: currentView === 'codes' ? '#667eea' : '#f8fafc',
+            color: currentView === 'codes' ? 'white' : '#64748b',
+            border: '2px solid #667eea',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '16px',
+            fontWeight: '500',
+            transition: 'all 0.2s',
+          }}
+        >
+          <List size={20} />
+          Conversor Códigos Geotab
+        </button>
       </div>
 
-      {isLoading && (
-        <div className="loading">
-          <div className="spinner"></div>
-          <span>Procesando archivo...</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="error">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="success">
-          <CheckCircle size={20} style={{ display: 'inline', marginRight: '8px' }} />
-          {success}
-        </div>
-      )}
-
-      {fileName && (
-        <div className="file-info">
-          <FileSpreadsheet size={20} style={{ display: 'inline', marginRight: '8px' }} />
-          <strong>Archivo seleccionado:</strong> {fileName}
-        </div>
-      )}
-
-      {csvData && csvData.length > 0 && (
+      {/* Render current view */}
+      {currentView === 'codes' ? (
+        <CodeConverter />
+      ) : (
         <>
-          <button
-            className="convert-button"
-            onClick={convertToExcel}
-            disabled={isLoading}
-          >
-            <Download size={20} />
-            Convertir a Excel
-          </button>
+          <h1>Conversor CSV a Excel</h1>
+          <p className="subtitle">
+            Convierte archivos CSV a Excel con formato de fechas mejorado
+          </p>
 
-          <div style={{ marginTop: '2rem' }}>
-            <h3>Vista previa de datos (primeras 5 filas):</h3>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="preview-table">
-                <thead>
-                  <tr>
-                    {Object.keys(csvData[0]).map((header, index) => (
-                      <th key={index}>
-                        {header.includes('ISO 8601') ? (
-                          <>
-                            <Calendar size={16} style={{ display: 'inline', marginRight: '4px' }} />
-                            {header.replace(' (formato ISO 8601)', '')}
-                          </>
-                        ) : header === 'Funcionamiento' ? (
-                          <>
-                            <CheckCircle size={16} style={{ display: 'inline', marginRight: '4px' }} />
-                            {header}
-                          </>
-                        ) : (
-                          header
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {csvData.slice(0, 5).map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {Object.entries(row).map(([key, cell], cellIndex) => (
-                        <td key={cellIndex} style={key === 'Funcionamiento' ? {
-                          color: cell === 'Funciona' ? '#10b981' : '#ef4444',
-                          fontWeight: 'bold'
-                        } : {}}>
-                          {cell || 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {csvData.length > 5 && (
-              <p style={{ color: '#666', fontStyle: 'italic' }}>
-                ... y {csvData.length - 5} filas más
-              </p>
-            )}
+          <div
+            className={`upload-area ${isLoading ? 'disabled' : ''}`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onClick={() => !isLoading && document.getElementById('fileInput').click()}
+          >
+            <Upload size={48} style={{ color: '#667eea', marginBottom: '1rem' }} />
+            <h3>Arrastra tu archivo CSV aquí</h3>
+            <p>o haz clic para seleccionar un archivo</p>
+            <input
+              id="fileInput"
+              type="file"
+              accept=".csv"
+              onChange={(e) => handleFileUpload(e.target.files[0])}
+              className="file-input"
+              disabled={isLoading}
+            />
           </div>
+
+          {isLoading && (
+            <div className="loading">
+              <div className="spinner"></div>
+              <span>Procesando archivo...</span>
+            </div>
+          )}
+
+          {error && (
+            <div className="error">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="success">
+              <CheckCircle size={20} style={{ display: 'inline', marginRight: '8px' }} />
+              {success}
+            </div>
+          )}
+
+          {fileName && (
+            <div className="file-info">
+              <FileSpreadsheet size={20} style={{ display: 'inline', marginRight: '8px' }} />
+              <strong>Archivo seleccionado:</strong> {fileName}
+            </div>
+          )}
+
+          {csvData && csvData.length > 0 && (
+            <>
+              <button
+                className="convert-button"
+                onClick={convertToExcel}
+                disabled={isLoading}
+              >
+                <Download size={20} />
+                Convertir a Excel
+              </button>
+
+              <div style={{ marginTop: '2rem' }}>
+                <h3>Vista previa de datos ({csvData.length} filas):</h3>
+                <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="preview-table">
+                    <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 1 }}>
+                      <tr>
+                        {Object.keys(csvData[0]).map((header, index) => (
+                          <th key={index} style={{ padding: '12px 8px', borderBottom: '2px solid #e2e8f0' }}>
+                            {header.includes('ISO 8601') ? (
+                              <>
+                                <Calendar size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                                {header.replace(' (formato ISO 8601)', '')}
+                              </>
+                            ) : header === 'Funcionamiento' ? (
+                              <>
+                                <CheckCircle size={16} style={{ display: 'inline', marginRight: '4px' }} />
+                                {header}
+                              </>
+                            ) : header === 'Status' ? (
+                              <>
+                                <CheckCircle size={16} style={{ display: 'inline', marginRight: '4px', color: '#667eea' }} />
+                                {header}
+                              </>
+                            ) : header === 'EQUIPO' ? (
+                              <>
+                                <FileSpreadsheet size={16} style={{ display: 'inline', marginRight: '4px', color: '#667eea' }} />
+                                {header}
+                              </>
+                            ) : (
+                              header
+                            )}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvData.map((row, rowIndex) => (
+                        <tr key={rowIndex} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          {Object.entries(row).map(([key, cell], cellIndex) => (
+                            <td key={cellIndex} style={{
+                              padding: '8px',
+                              fontSize: '13px',
+                              ...(key === 'Funcionamiento' ? {
+                                color: cell === 'Funciona' ? '#10b981' : '#ef4444',
+                                fontWeight: 'bold'
+                              } : key === 'Status' ? {
+                                fontFamily: 'monospace',
+                                fontSize: '11px',
+                                color: '#6366f1',
+                                maxWidth: '200px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              } : key === 'EQUIPO' ? {
+                                fontWeight: '600',
+                                color: '#374151'
+                              } : {})
+                            }}>
+                              {cell || 'N/A'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '3rem', padding: '1rem', background: 'rgba(102, 126, 234, 0.05)', borderRadius: '8px' }}>
+                <h4>Características:</h4>
+                <ul style={{ textAlign: 'left', color: '#666' }}>
+                  <li>✅ Conversión automática de fechas ISO 8601 a formato legible</li>
+                  <li>✅ Columna automática de "Funcionamiento" basada en estado online</li>
+                  <li>✅ Columna "Status" con fórmula BUSCARV automática</li>
+                  <li>✅ Renombrado automático de columna B a "EQUIPO"</li>
+                  <li>✅ Vista previa completa de todos los datos</li>
+                  <li>✅ Soporte para arrastrar y soltar archivos</li>
+                  <li>✅ Columnas auto-ajustables en Excel</li>
+                  <li>✅ Manejo de errores y validación de archivos</li>
+                </ul>
+              </div>
+            </>
+          )}
         </>
       )}
-
-      <div style={{ marginTop: '3rem', padding: '1rem', background: 'rgba(102, 126, 234, 0.05)', borderRadius: '8px' }}>
-        <h4>Características:</h4>
-        <ul style={{ textAlign: 'left', color: '#666' }}>
-          <li>✅ Conversión automática de fechas ISO 8601 a formato legible</li>
-          <li>✅ Columna automática de "Funcionamiento" basada en estado online</li>
-          <li>✅ Soporte para arrastrar y soltar archivos</li>
-          <li>✅ Vista previa de datos antes de la conversión</li>
-          <li>✅ Columnas auto-ajustables en Excel</li>
-          <li>✅ Manejo de errores y validación de archivos</li>
-        </ul>
-      </div>
     </div>
   );
+
 }
 
 export default App;
